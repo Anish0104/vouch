@@ -1,0 +1,33 @@
+# .vouch.yml — Agent Delegation Policy
+# Place this file in your repository root.
+# The AI agent reads this BEFORE attempting any action.
+
+agent: cursor
+expires: 48h
+
+allow:
+  - github.createBranch
+  - github.readCode
+  - github.listCommits
+  - github.openPR
+  - github.listBranches
+  - github.listPRs
+  - github.getFileContents
+  - github.createCommit
+  - github.pushCode
+  - linear.createIssue
+  - linear.listIssues
+  - linear.updateIssue
+
+deny:
+  - github.mergeToMain
+  - github.deleteBranch
+  - github.modifyWorkflows
+  - github.accessSecrets
+  - github.deleteRepo
+  - linear.deleteProject
+
+step_up_required:
+  - github.openPR
+  - github.pushCode
+  - linear.createIssue

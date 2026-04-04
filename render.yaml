@@ -1,0 +1,54 @@
+services:
+  - type: web
+    name: vouch
+    runtime: docker
+    plan: starter
+    region: ohio
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /readyz
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 30
+    disk:
+      name: vouch-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: SERVE_DASHBOARD
+        value: "true"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: JSON_BODY_LIMIT
+        value: 1mb
+      - key: VOUCH_DATA_DIR
+        value: /data
+      - key: DEMO_MODE
+        value: "false"
+      - key: API_BASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: AUTH0_DOMAIN
+        sync: false
+      - key: AUTH0_AUDIENCE
+        sync: false
+      - key: AUTH0_CLIENT_ID
+        sync: false
+      - key: AUTH0_MGMT_CLIENT_ID
+        sync: false
+      - key: AUTH0_MGMT_CLIENT_SECRET
+        sync: false
+      - key: VITE_API_URL
+        sync: false
+      - key: VITE_AUTH0_DOMAIN
+        sync: false
+      - key: VITE_AUTH0_CLIENT_ID
+        sync: false
+      - key: VITE_AUTH0_AUDIENCE
+        sync: false

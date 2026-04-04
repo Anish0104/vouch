@@ -1,0 +1,10 @@
+.env
+.env.*
+apps/api/.env
+apps/dashboard/.env
+packages/vouch-sdk/.env
+.vouch-data
+node_modules
+apps/dashboard/dist
+npm-debug.log*
+tests

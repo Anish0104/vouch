@@ -1,0 +1,26 @@
+{
+  "name": "@vouch/api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "auth0": "^4.3.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "express-jwt": "^8.4.1",
+    "groq-sdk": "^0.5.0",
+    "js-yaml": "^4.1.0",
+    "jwks-rsa": "^3.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "@octokit/rest": "^21.0.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

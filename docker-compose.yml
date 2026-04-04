@@ -1,0 +1,17 @@
+services:
+  vouch:
+    build: .
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./apps/api/.env
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      SERVE_DASHBOARD: "true"
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:3001}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3001}
+      VOUCH_DATA_DIR: /data
+    volumes:
+      - ./.vouch-data:/data

@@ -1,0 +1,26 @@
+{
+  "name": "vouch",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/dashboard",
+    "apps/api",
+    "packages/vouch-sdk"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=apps/api\" \"npm run dev --workspace=apps/dashboard\"",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:dashboard": "npm run dev --workspace=apps/dashboard",
+    "start": "npm run start --workspace=apps/api",
+    "start:api": "npm run start --workspace=apps/api",
+    "install:all": "npm install",
+    "build": "npm run build --workspace=apps/dashboard",
+    "build:dashboard": "npm run build --workspace=apps/dashboard",
+    "test": "node --test tests",
+    "verify": "npm test && npm run build",
+    "deploy:check": "node scripts/deploy-check.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
