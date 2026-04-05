@@ -14,6 +14,7 @@ const toolActionMap = {
   github_createCommit: { service: 'github', action: 'createCommit' },
   github_pushCode: { service: 'github', action: 'pushCode' },
   linear_createIssue: { service: 'linear', action: 'createIssue' },
+  linear_listTeams: { service: 'linear', action: 'listTeams' },
   linear_listIssues: { service: 'linear', action: 'listIssues' },
   linear_updateIssue: { service: 'linear', action: 'updateIssue' },
 };

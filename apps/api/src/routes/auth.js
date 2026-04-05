@@ -6,6 +6,7 @@ const router = express.Router();
 const { connectionStore } = require('../services/connectionStore');
 const { authStateStore } = require('../services/authStateStore');
 const { buildAuth0Preflight, getMyAccountAudience, REQUIRED_CONNECTED_ACCOUNT_SCOPES } = require('../services/auth0Diagnostics');
+const { maybeVerifyUserAccessToken, verifyUserAccessToken } = require('../middleware/verifyUserAccessToken');
 const {
   getApiBaseUrl,
   getFrontendUrl,
@@ -46,18 +47,19 @@ function getService(req, res) {
 }
 
 // GET /api/auth/status — check connected services
-router.get('/status', (req, res) => {
-  const details = connectionStore.getAll();
-  const services = connectionStore.getStatusMap();
+router.get('/status', maybeVerifyUserAccessToken, (req, res) => {
+  const userId = DEMO_MODE ? 'demo-user' : req.auth?.sub || null;
+  const details = connectionStore.getAll(userId);
+  const services = connectionStore.getStatusMap(userId);
   const hasConnectedService = Object.values(services).some(Boolean);
-  const firstConnectedUserId = Object.values(details).find((entry) => entry?.connected)?.userId || null;
 
   return res.json({
-    authenticated: DEMO_MODE || hasConnectedService,
-    userId: DEMO_MODE ? 'demo-user' : firstConnectedUserId,
+    authenticated: DEMO_MODE || Boolean(userId),
+    userId,
     services,
     details,
     demo: DEMO_MODE,
+    hasConnectedService,
   });
 });
 
@@ -67,7 +69,7 @@ router.get('/preflight', async (req, res) => {
 });
 
 // POST /api/auth/connect/:service — initiate OAuth connection
-router.post('/connect/:service', (req, res) => {
+router.post('/connect/:service', maybeVerifyUserAccessToken, (req, res) => {
   const service = getService(req, res);
   if (!service) return;
 
@@ -85,7 +87,9 @@ router.post('/connect/:service', (req, res) => {
   // In production, redirect to Auth0 connection flow
   const authorizeUrl = new URL(`https://${process.env.AUTH0_DOMAIN}/authorize`);
   const apiBaseUrl = getApiBaseUrl(req);
-  const authState = authStateStore.create(service);
+  const authState = authStateStore.create(service, undefined, {
+    userId: req.auth?.sub || null,
+  });
   authorizeUrl.searchParams.set('response_type', 'code');
   authorizeUrl.searchParams.set('client_id', process.env.AUTH0_CLIENT_ID || '');
   authorizeUrl.searchParams.set('audience', CONNECTED_ACCOUNTS_AUDIENCE);
@@ -98,7 +102,7 @@ router.post('/connect/:service', (req, res) => {
 });
 
 // POST /api/auth/disconnect/:service
-router.post('/disconnect/:service', (req, res) => {
+router.post('/disconnect/:service', verifyUserAccessToken, (req, res) => {
   const service = getService(req, res);
   if (!service) return;
 
@@ -107,7 +111,9 @@ router.post('/disconnect/:service', (req, res) => {
     return res.json({ success: true, service, connected: false });
   }
 
-  connectionStore.setConnected(service, false);
+  connectionStore.setConnected(service, false, {
+    userId: req.auth?.sub || null,
+  });
   res.json({ success: true, service, connected: false });
 });
 
@@ -148,7 +154,9 @@ router.get('/callback', (req, res) => {
   }
 
   if (service && SUPPORTED_SERVICES.has(service) && !error) {
-    connectionStore.setConnected(service, true);
+    connectionStore.setConnected(service, true, {
+      userId: stateRecord?.userId || null,
+    });
   }
 
   res.redirect(buildCallbackUrl({
@@ -159,13 +167,13 @@ router.get('/callback', (req, res) => {
   }));
 });
 
-router.post('/record/:service', (req, res) => {
+router.post('/record/:service', verifyUserAccessToken, (req, res) => {
   const service = getService(req, res);
   if (!service) return;
 
-  const { connected = true, userId = null, accountId = null } = req.body || {};
+  const { connected = true, accountId = null } = req.body || {};
   const nextState = connectionStore.setConnected(service, Boolean(connected), {
-    userId,
+    userId: req.auth?.sub || null,
     accountId,
   });
 
@@ -173,7 +181,7 @@ router.post('/record/:service', (req, res) => {
     success: true,
     service,
     connected: nextState,
-    detail: connectionStore.getAll()[service],
+    detail: connectionStore.getAll(req.auth?.sub || null)[service],
   });
 });
 

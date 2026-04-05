@@ -68,6 +68,13 @@ Copy values from `.env.example` into your local environment as needed for:
 - Dashboard (`VITE_*`, optional `VITE_AUTH0_GITHUB_CONNECTION`, `VITE_AUTH0_LINEAR_CONNECTION`)
 - CLI/SDK (`VOUCH_*`, `GROQ_API_KEY`)
 
+For live Token Vault execution, also configure:
+
+- `AUTH0_TOKEN_VAULT_CLIENT_ID`
+- `AUTH0_TOKEN_VAULT_CLIENT_SECRET`
+- `AUTH0_TOKEN_VAULT_PRIVATE_KEY`
+- `AUTH0_TOKEN_VAULT_KEY_ID` (optional)
+
 ### 3) Run API + dashboard
 
 ```bash
@@ -133,10 +140,14 @@ Production-specific notes:
 - The dashboard reads public Auth0/API settings from `/runtime-config.js`, so the same built frontend can be configured at runtime inside the container.
 - `/readyz` returns `503` until the required live Auth0 configuration is present.
 - Live service connection now uses Auth0 Connected Accounts via the My Account API. Your Auth0 SPA must be allowed to request Connected Accounts scopes, and your connection names must match `VITE_AUTH0_GITHUB_CONNECTION` / `VITE_AUTH0_LINEAR_CONNECTION`.
+- Live Token Vault execution now uses a privileged worker token exchange, so the API also needs `AUTH0_TOKEN_VAULT_CLIENT_ID`, `AUTH0_TOKEN_VAULT_CLIENT_SECRET`, and `AUTH0_TOKEN_VAULT_PRIVATE_KEY`.
+- Live dashboard mutation and approval routes now require an end-user Auth0 access token, so policy saves, invite generation, audit reads, and step-up approvals are scoped to the signed-in user.
+- Linear issue creation can now discover workspace teams through `linear.listTeams`, and `linear.createIssue` accepts `teamId`, `teamKey`, or `teamName` so the agent does not need a raw team UUID up front.
 - Render Blueprint deployment is included in [render.yaml](/Users/anish/Documents/Vouch/render.yaml).
 - CI is included in [.github/workflows/ci.yml](/Users/anish/Documents/Vouch/.github/workflows/ci.yml).
 - A post-deploy smoke check is included via `npm run deploy:check -- https://your-app.example.com`.
 - The full deployment checklist is in [DEPLOYMENT.md](/Users/anish/Documents/Vouch/DEPLOYMENT.md).
+- The Linear/Auth0 setup walkthrough is in [LINEAR_SETUP.md](/Users/anish/Documents/Vouch/LINEAR_SETUP.md).
 
 ## API Surface
 

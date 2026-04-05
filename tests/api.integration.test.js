@@ -27,6 +27,9 @@ async function startApi({
   auth0Audience = 'https://api.vouch.dev',
   auth0MgmtClientId = 'mgmt_client_123',
   auth0MgmtClientSecret = 'mgmt_secret_123',
+  auth0TokenVaultClientId = 'worker_client_123',
+  auth0TokenVaultClientSecret = 'worker_secret_123',
+  auth0TokenVaultPrivateKey = '-----BEGIN PRIVATE KEY-----\\nTEST\\n-----END PRIVATE KEY-----',
   viteAuth0GithubConnection = 'github',
   viteAuth0LinearConnection = 'linear',
   configureModules = null,
@@ -41,6 +44,9 @@ async function startApi({
   process.env.AUTH0_AUDIENCE = auth0Audience;
   process.env.AUTH0_MGMT_CLIENT_ID = auth0MgmtClientId;
   process.env.AUTH0_MGMT_CLIENT_SECRET = auth0MgmtClientSecret;
+  process.env.AUTH0_TOKEN_VAULT_CLIENT_ID = auth0TokenVaultClientId;
+  process.env.AUTH0_TOKEN_VAULT_CLIENT_SECRET = auth0TokenVaultClientSecret;
+  process.env.AUTH0_TOKEN_VAULT_PRIVATE_KEY = auth0TokenVaultPrivateKey;
   process.env.VITE_AUTH0_GITHUB_CONNECTION = viteAuth0GithubConnection;
   process.env.VITE_AUTH0_LINEAR_CONNECTION = viteAuth0LinearConnection;
 
@@ -85,6 +91,12 @@ async function postJson(baseUrl, pathname, body, headers = {}) {
     status: response.status,
     body: await response.json(),
     headers: response.headers,
+  };
+}
+
+function liveUserHeaders(userId = 'auth0|user_123') {
+  return {
+    Authorization: `Bearer test-user:${userId}`,
   };
 }
 
@@ -213,13 +225,17 @@ test('production mode does not seed demo data and uses a real callback route for
   const health = await fetch(`${baseUrl}/health`).then((response) => response.json());
   assert.equal(health.demo, false);
 
-  const delegations = await fetch(`${baseUrl}/api/delegate`).then((response) => response.json());
+  const delegations = await fetch(`${baseUrl}/api/delegate`, {
+    headers: liveUserHeaders(),
+  }).then((response) => response.json());
   assert.deepEqual(delegations.delegations, []);
 
-  const audit = await fetch(`${baseUrl}/api/audit`).then((response) => response.json());
+  const audit = await fetch(`${baseUrl}/api/audit`, {
+    headers: liveUserHeaders(),
+  }).then((response) => response.json());
   assert.deepEqual(audit.events, []);
 
-  const connectResponse = await postJson(baseUrl, '/api/auth/connect/github', {});
+  const connectResponse = await postJson(baseUrl, '/api/auth/connect/github', {}, liveUserHeaders());
   assert.equal(connectResponse.status, 200);
   const authUrl = new URL(connectResponse.body.authUrl);
   const state = authUrl.searchParams.get('state');
@@ -241,8 +257,11 @@ test('production mode does not seed demo data and uses a real callback route for
     'http://localhost:5173/callback?service=github&connected=true',
   );
 
-  const status = await fetch(`${baseUrl}/api/auth/status`).then((response) => response.json());
+  const status = await fetch(`${baseUrl}/api/auth/status`, {
+    headers: liveUserHeaders(),
+  }).then((response) => response.json());
   assert.equal(status.services.github, true);
+  assert.equal(status.userId, 'auth0|user_123');
 });
 
 test('production auth callback rejects missing state and does not connect the service', async (t) => {
@@ -275,7 +294,9 @@ test('production auth callback rejects missing state and does not connect the se
     'http://localhost:5173/callback?service=github&error=invalid_state&error_description=Missing+or+expired+OAuth+state',
   );
 
-  const status = await fetch(`${baseUrl}/api/auth/status`).then((response) => response.json());
+  const status = await fetch(`${baseUrl}/api/auth/status`, {
+    headers: liveUserHeaders(),
+  }).then((response) => response.json());
   assert.equal(status.services.github, false);
 });
 
@@ -685,18 +706,92 @@ test('recording a live connection stores the linked Auth0 user id', async (t) =>
 
   const recordResponse = await postJson(baseUrl, '/api/auth/record/github', {
     connected: true,
-    userId: 'auth0|user_123',
     accountId: 'cac_123',
-  });
+  }, liveUserHeaders());
 
   assert.equal(recordResponse.status, 200);
   assert.equal(recordResponse.body.detail.userId, 'auth0|user_123');
   assert.equal(recordResponse.body.detail.accountId, 'cac_123');
 
-  const status = await fetch(`${baseUrl}/api/auth/status`).then((response) => response.json());
+  const status = await fetch(`${baseUrl}/api/auth/status`, {
+    headers: liveUserHeaders(),
+  }).then((response) => response.json());
   assert.equal(status.services.github, true);
   assert.equal(status.userId, 'auth0|user_123');
   assert.equal(status.details.github.userId, 'auth0|user_123');
+});
+
+test('live demo scenario, audit export, and audit sharing work for the signed-in user', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vouch-prod-demo-scenario-'));
+  let server;
+  let baseUrl;
+
+  t.after(async () => {
+    if (server) {
+      await stopApi(server);
+    }
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  ({ server, baseUrl } = await startApi({
+    dataDir,
+    demoMode: false,
+    frontendUrl: 'http://localhost:5173',
+    auth0Domain: 'tenant.example.auth0.com',
+    auth0ClientId: 'spa_client_123',
+  }));
+
+  const scenarioResponse = await postJson(baseUrl, '/api/delegate/demo-scenario', {}, liveUserHeaders());
+  assert.equal(scenarioResponse.status, 201);
+  assert.equal(scenarioResponse.body.agentId, 'cursor');
+  assert.match(scenarioResponse.body.inviteUrl, /\/invite\/vch_/);
+  assert.equal(scenarioResponse.body.summary.counts.allow > 0, true);
+  assert.equal(scenarioResponse.body.scenario.policySummary.stepUpCount > 0, true);
+
+  const delegationsResponse = await fetch(`${baseUrl}/api/delegate`, {
+    headers: liveUserHeaders(),
+  }).then((response) => response.json());
+  assert.equal(delegationsResponse.delegations[0].delegationId, scenarioResponse.body.delegationId);
+
+  const { auditLogger } = require(path.join(REPO_ROOT, 'apps/api/src/services/auditLogger.js'));
+  auditLogger.log({
+    agent: 'cursor',
+    action: 'github.createBranch',
+    params: 'feature/judge-demo',
+    status: 'allowed',
+    delegationId: scenarioResponse.body.delegationId,
+  });
+  auditLogger.log({
+    agent: 'cursor',
+    action: 'github.openPR',
+    params: 'feature/judge-demo -> main',
+    status: 'pending_approval',
+    delegationId: scenarioResponse.body.delegationId,
+  });
+
+  const csvResponse = await fetch(`${baseUrl}/api/audit/export?format=csv&limit=20`, {
+    headers: liveUserHeaders(),
+  });
+  const csvBody = await csvResponse.text();
+
+  assert.equal(csvResponse.status, 200);
+  assert.match(csvResponse.headers.get('content-type') || '', /text\/csv/);
+  assert.match(csvBody, /github\.createBranch/);
+  assert.match(csvBody, /github\.openPR/);
+
+  const shareResponse = await postJson(baseUrl, '/api/audit/share', {
+    title: 'Judge Walkthrough Snapshot',
+    limit: 20,
+  }, liveUserHeaders());
+
+  assert.equal(shareResponse.status, 201);
+  assert.match(shareResponse.body.shareUrl, /\/audit\/share\/shr_/);
+  assert.equal(shareResponse.body.snapshot.summary.total >= 2, true);
+
+  const sharedSnapshot = await fetch(`${baseUrl}/api/audit/share/${shareResponse.body.snapshotId}`).then((response) => response.json());
+  assert.equal(sharedSnapshot.title, 'Judge Walkthrough Snapshot');
+  assert.equal(sharedSnapshot.summary.pendingApproval >= 1, true);
+  assert.equal(sharedSnapshot.events.length >= 2, true);
 });
 
 test('readyz surfaces missing live configuration before deployment', async (t) => {
@@ -721,6 +816,9 @@ test('readyz surfaces missing live configuration before deployment', async (t) =
     auth0Audience: '',
     auth0MgmtClientId: '',
     auth0MgmtClientSecret: '',
+    auth0TokenVaultClientId: '',
+    auth0TokenVaultClientSecret: '',
+    auth0TokenVaultPrivateKey: '',
   }));
 
   const response = await fetch(`${baseUrl}/readyz`);
@@ -730,6 +828,8 @@ test('readyz surfaces missing live configuration before deployment', async (t) =
   assert.equal(body.status, 'degraded');
   assert.match(body.issues.join('\n'), /AUTH0_DOMAIN/);
   assert.match(body.issues.join('\n'), /AUTH0_MGMT_CLIENT_SECRET/);
+  assert.match(body.issues.join('\n'), /AUTH0_TOKEN_VAULT_CLIENT_ID/);
+  assert.match(body.issues.join('\n'), /AUTH0_TOKEN_VAULT_PRIVATE_KEY/);
   assert.match(body.issues.join('\n'), /FRONTEND_URL or API_BASE_URL/);
 });
 

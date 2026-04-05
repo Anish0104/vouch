@@ -32,13 +32,14 @@ class AuthStateStore {
     }
   }
 
-  create(service, ttlMs = DEFAULT_TTL_MS) {
+  create(service, ttlMs = DEFAULT_TTL_MS, metadata = {}) {
     this._pruneExpired();
 
     const state = `st_${crypto.randomBytes(16).toString('hex')}`;
     const now = Date.now();
     const record = {
       service,
+      ...metadata,
       createdAt: new Date(now).toISOString(),
       expiresAt: new Date(now + ttlMs).toISOString(),
     };

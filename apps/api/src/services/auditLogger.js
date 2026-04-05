@@ -13,7 +13,7 @@ class AuditLogger extends EventEmitter {
     super();
     this.setMaxListeners(200);
     this.maxEvents = 500;
-    this.clients = new Set(); // SSE response objects
+    this.clients = new Set(); // { res, filter }
     const storedEvents = readJson(FILE_NAME, []);
     this.events = (Array.isArray(storedEvents) ? storedEvents : []).filter((event) =>
       DEMO_MODE ? true : event?.delegationId !== DEMO_DELEGATION_ID,
@@ -88,19 +88,26 @@ class AuditLogger extends EventEmitter {
     const data = `event: action\ndata: ${JSON.stringify(event)}\n\n`;
     for (const client of this.clients) {
       try {
-        client.write(data);
+        if (client.filter && !client.filter(event)) {
+          continue;
+        }
+        client.res.write(data);
       } catch {
         this.clients.delete(client);
       }
     }
   }
 
-  addClient(res) {
-    this.clients.add(res);
+  addClient(res, filter = null) {
+    const client = { res, filter };
+    this.clients.add(client);
     // Send last 50 events to new client
     const recent = this.events.slice(0, 50).reverse();
     for (const event of recent) {
       try {
+        if (filter && !filter(event)) {
+          continue;
+        }
         res.write(`event: action\ndata: ${JSON.stringify(event)}\n\n`);
       } catch {
         break;
@@ -109,13 +116,17 @@ class AuditLogger extends EventEmitter {
   }
 
   removeClient(res) {
-    this.clients.delete(res);
+    for (const client of this.clients) {
+      if (client.res === res) {
+        this.clients.delete(client);
+      }
+    }
   }
 
   closeAllClients() {
     for (const client of this.clients) {
       try {
-        client.end();
+        client.res.end();
       } catch {
         // Ignore client close errors during shutdown.
       }

@@ -1,6 +1,14 @@
+const { execFileSync } = require('child_process');
 const Groq = require('groq-sdk');
 const { getM2MToken, isDemoMode, VouchClient } = require('./client');
 const { getPolicyDecision, loadPolicy } = require('./policy');
+
+const PLACEHOLDER_GITHUB_REPOS = new Set([
+  'user/repository',
+  'owner/repository',
+  'your-org/your-repo',
+  'your/repo',
+]);
 
 const tools = [
   {
@@ -53,6 +61,94 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'github_getFileContents',
+      description: 'Fetch a file from a GitHub repository through Vouch',
+      parameters: {
+        type: 'object',
+        properties: {
+          repo: { type: 'string' },
+          path: { type: 'string' },
+        },
+        required: ['repo', 'path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'github_listBranches',
+      description: 'List branches in a GitHub repository through Vouch',
+      parameters: {
+        type: 'object',
+        properties: {
+          repo: { type: 'string' },
+        },
+        required: ['repo'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'github_listPRs',
+      description: 'List pull requests in a GitHub repository through Vouch',
+      parameters: {
+        type: 'object',
+        properties: {
+          repo: { type: 'string' },
+          state: { type: 'string', default: 'open' },
+        },
+        required: ['repo'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'github_createCommit',
+      description: 'Create a commit on a branch through Vouch with one or more file changes',
+      parameters: {
+        type: 'object',
+        properties: {
+          repo: { type: 'string' },
+          branch: { type: 'string' },
+          message: { type: 'string' },
+          files: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                path: { type: 'string' },
+                content: { type: 'string' },
+              },
+              required: ['path', 'content'],
+            },
+          },
+        },
+        required: ['repo', 'branch', 'message', 'files'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'github_pushCode',
+      description: 'Push a prepared commit SHA to a branch ref through Vouch',
+      parameters: {
+        type: 'object',
+        properties: {
+          repo: { type: 'string' },
+          branch: { type: 'string' },
+          commitSha: { type: 'string' },
+          force: { type: 'boolean', default: false },
+        },
+        required: ['repo', 'branch', 'commitSha'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'github_openPR',
       description: 'Open a pull request through Vouch',
       parameters: {
@@ -71,16 +167,55 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'linear_listTeams',
+      description: 'List available Linear teams through Vouch before creating issues',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'linear_listIssues',
+      description: 'List issues from Linear through Vouch',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'linear_createIssue',
-      description: 'Create a Linear issue through Vouch',
+      description: 'Create a Linear issue through Vouch. If teamId is not known, call linear_listTeams first or pass teamKey/teamName.',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string' },
           description: { type: 'string' },
           teamId: { type: 'string' },
+          teamKey: { type: 'string' },
+          teamName: { type: 'string' },
         },
         required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'linear_updateIssue',
+      description: 'Update an existing Linear issue through Vouch',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+        },
+        required: ['id'],
       },
     },
   },
@@ -104,6 +239,72 @@ function extractBranchNameFromTask(task) {
   return 'feature/test-vouch';
 }
 
+function parseGitHubRepoFromRemoteUrl(remoteUrl) {
+  const normalized = String(remoteUrl || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  const sshMatch = normalized.match(/^git@github\.com:([^/]+\/[^/]+?)(?:\.git)?$/i);
+  if (sshMatch?.[1]) {
+    return sshMatch[1];
+  }
+
+  const httpsMatch = normalized.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/i);
+  if (httpsMatch?.[1]) {
+    return httpsMatch[1];
+  }
+
+  return '';
+}
+
+function detectGitHubRepoFromGit(cwd) {
+  try {
+    const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+
+    return parseGitHubRepoFromRemoteUrl(remoteUrl);
+  } catch {
+    return '';
+  }
+}
+
+function resolveDefaultGitHubRepo(options = {}) {
+  const explicitRepo = String(options.repo || '').trim();
+  if (explicitRepo) {
+    return explicitRepo;
+  }
+
+  const envRepo = String(process.env.VOUCH_REPO || '').trim();
+  if (envRepo) {
+    return envRepo;
+  }
+
+  return detectGitHubRepoFromGit(options.cwd || process.cwd());
+}
+
+function isPlaceholderGitHubRepo(repo) {
+  return PLACEHOLDER_GITHUB_REPOS.has(String(repo || '').trim().toLowerCase());
+}
+
+function normalizeToolArguments(toolName, params, options = {}) {
+  const nextParams = { ...(params || {}) };
+  const defaultRepo = String(options.defaultRepo || '').trim();
+
+  if (!String(toolName || '').startsWith('github_')) {
+    return nextParams;
+  }
+
+  if ((!String(nextParams.repo || '').trim() || isPlaceholderGitHubRepo(nextParams.repo)) && defaultRepo) {
+    nextParams.repo = defaultRepo;
+  }
+
+  return nextParams;
+}
+
 function getToolActionName(toolName) {
   const [service, ...actionParts] = String(toolName || '').split('_');
   return `${service}.${actionParts.join('_')}`;
@@ -123,8 +324,53 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isGroqRateLimitError(error) {
+  const status = Number(error?.status || error?.response?.status || 0);
+  const code = String(error?.code || error?.error?.code || error?.response?.data?.error?.code || '');
+  const message = String(error?.message || error?.response?.data?.error?.message || error || '');
+
+  return status === 429
+    || code === 'rate_limit_exceeded'
+    || message.toLowerCase().includes('rate limit');
+}
+
+function summarizeToolResults(task, toolResults) {
+  if (!Array.isArray(toolResults) || toolResults.length === 0) {
+    return `Task finished with no tool calls: ${task}`;
+  }
+
+  const lines = toolResults.map(({ tool, result }) => {
+    if (result?.status === 'success' && result?.result?.html_url) {
+      return `- ${tool}: success (${result.result.html_url})`;
+    }
+
+    if (result?.status === 'success' && result?.result?.ref) {
+      return `- ${tool}: success (${result.result.ref})`;
+    }
+
+    if (result?.status === 'pending_approval' && result?.approval?.status === 'approved' && result?.approval?.event?.result) {
+      return `- ${tool}: approved and executed`;
+    }
+
+    if (result?.status === 'pending_approval' && result?.approval?.status) {
+      return `- ${tool}: ${result.approval.status}`;
+    }
+
+    if (result?.status === 'error') {
+      return `- ${tool}: error (${result.error || 'unknown error'})`;
+    }
+
+    return `- ${tool}: ${result?.status || 'completed'}`;
+  });
+
+  return [
+    `Task completed through Vouch: ${task}`,
+    ...lines,
+  ].join('\n');
+}
+
 function buildDemoToolCalls(task, options = {}) {
-  const repo = options.repo || process.env.VOUCH_REPO || 'demo/repo';
+  const repo = resolveDefaultGitHubRepo(options) || 'demo/repo';
   const branchName = extractBranchNameFromTask(task);
 
   return [
@@ -148,10 +394,15 @@ async function executeToolCall(call, options) {
     policy,
     vouch,
     approval = {},
+    defaultRepo = '',
     quiet = false,
   } = options;
   const toolName = call.name || call.function?.name;
-  const params = call.arguments || JSON.parse(call.function?.arguments || '{}');
+  const params = normalizeToolArguments(
+    toolName,
+    call.arguments || JSON.parse(call.function?.arguments || '{}'),
+    { defaultRepo },
+  );
   const fullAction = getToolActionName(toolName);
 
   logLine(`[tool] ${toolName} ${safeJson(params)}`, { quiet });
@@ -221,6 +472,7 @@ async function runDemoAgentLoop(task, options) {
 async function runAgent(task, options = {}) {
   const policy = await loadPolicy(options.cwd || process.cwd());
   const delegationId = process.env.VOUCH_DELEGATION_ID || (isDemoMode() ? 'del_demo' : '');
+  const defaultRepo = resolveDefaultGitHubRepo(options);
 
   if (!delegationId) {
     throw new Error('Missing VOUCH_DELEGATION_ID');
@@ -236,6 +488,7 @@ async function runAgent(task, options = {}) {
   if (isDemoMode()) {
     return runDemoAgentLoop(task, {
       ...options,
+      defaultRepo,
       policy,
       vouch,
     });
@@ -254,19 +507,34 @@ async function runAgent(task, options = {}) {
         `Allowed actions: ${policy.allow.join(', ') || 'none'}`,
         `Denied actions: ${policy.deny.join(', ') || 'none'}`,
         `Step-up actions: ${policy.stepUpRequired.join(', ') || 'none'}`,
+        `Default GitHub repository: ${defaultRepo || 'none detected'}`,
+        'If the user asks for a GitHub action without naming a repo, use the default GitHub repository.',
         'Never attempt denied actions. Always use the provided Vouch tools. Never claim to have completed an action unless the tool result confirms it.',
       ].join('\n'),
     },
     { role: 'user', content: task },
   ];
+  const toolResults = [];
 
   while (true) {
-    const response = await groq.chat.completions.create({
-      model: options.model || 'llama-3.3-70b-versatile',
-      messages,
-      tools,
-      tool_choice: 'auto',
-    });
+    let response;
+    try {
+      response = await groq.chat.completions.create({
+        model: options.model || 'llama-3.3-70b-versatile',
+        messages,
+        tools,
+        tool_choice: 'auto',
+      });
+    } catch (error) {
+      if (toolResults.length > 0 && isGroqRateLimitError(error)) {
+        const summary = summarizeToolResults(task, toolResults);
+        if (!options.quiet) {
+          process.stdout.write(`${summary}\n`);
+        }
+        return summary;
+      }
+      throw error;
+    }
 
     const choice = response.choices[0];
     messages.push(choice.message);
@@ -286,8 +554,13 @@ async function runAgent(task, options = {}) {
     for (const call of choice.message.tool_calls || []) {
       const result = await executeToolCall(call, {
         ...options,
+        defaultRepo,
         policy,
         vouch,
+      });
+      toolResults.push({
+        tool: call.function?.name || call.name || 'unknown_tool',
+        result,
       });
 
       messages.push({
@@ -303,6 +576,9 @@ module.exports = {
   buildDemoToolCalls,
   executeToolCall,
   extractBranchNameFromTask,
+  normalizeToolArguments,
+  parseGitHubRepoFromRemoteUrl,
+  resolveDefaultGitHubRepo,
   runAgent,
   tools,
 };

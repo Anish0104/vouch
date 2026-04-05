@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'vouch:latestInvite';
+export const LATEST_INVITE_EVENT = 'vouch:latestInviteUpdated';
 
 export function loadLatestInvite() {
   if (typeof window === 'undefined') return null;
@@ -17,6 +18,9 @@ export function saveLatestInvite(invite) {
 
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(invite));
+    window.dispatchEvent(new CustomEvent(LATEST_INVITE_EVENT, {
+      detail: invite,
+    }));
   } catch {
     // Ignore storage errors in demo mode.
   }

@@ -1,6 +1,11 @@
 const { approvalStore } = require('./approvalStore');
 const { auditLogger } = require('./auditLogger');
 const { executeDelegatedAction, summarizeParams } = require('./actionExecutor');
+const { isDemoMode, loadApiEnv } = require('../config/runtime');
+
+loadApiEnv();
+
+const DEMO_MODE = isDemoMode();
 
 async function approvePendingAction(req, res) {
   const { auditId } = req.params;
@@ -8,6 +13,10 @@ async function approvePendingAction(req, res) {
 
   if (!pending) {
     return res.status(404).json({ error: 'Pending action not found or already resolved' });
+  }
+
+  if (!DEMO_MODE && pending.delegation?.userId !== req.auth?.sub) {
+    return res.status(403).json({ error: 'You are not allowed to approve this action' });
   }
 
   try {
@@ -58,11 +67,17 @@ async function approvePendingAction(req, res) {
 
 function rejectPendingAction(req, res) {
   const { auditId } = req.params;
-  const pending = approvalStore.resolve(auditId, { status: 'rejected' });
+  const pendingRecord = approvalStore.get(auditId);
 
-  if (!pending) {
+  if (!pendingRecord) {
     return res.status(404).json({ error: 'Pending action not found or already resolved' });
   }
+
+  if (!DEMO_MODE && pendingRecord.delegation?.userId !== req.auth?.sub) {
+    return res.status(403).json({ error: 'You are not allowed to reject this action' });
+  }
+
+  const pending = approvalStore.resolve(auditId, { status: 'rejected' });
 
   const event = auditLogger.log({
     auditId: `${auditId}_rejected`,

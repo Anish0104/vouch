@@ -25,6 +25,7 @@ Before deploying, make sure you have:
 - a SPA application for the dashboard
 - an M2M application for the SDK/CLI
 - a Management API client with Token Vault access
+- a confidential Auth0 Token Vault worker client for privileged worker token exchange
 - GitHub and Linear connections configured in Auth0 Token Vault
 - a public base URL for the deployed app
 
@@ -46,10 +47,16 @@ Set these in your platform environment:
 - `AUTH0_CLIENT_ID=...`
 - `AUTH0_MGMT_CLIENT_ID=...`
 - `AUTH0_MGMT_CLIENT_SECRET=...`
+- `AUTH0_TOKEN_VAULT_CLIENT_ID=...`
+- `AUTH0_TOKEN_VAULT_CLIENT_SECRET=...`
+- `AUTH0_TOKEN_VAULT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"`
+- `AUTH0_TOKEN_VAULT_KEY_ID=...` (optional)
 - `VITE_API_URL=https://your-app.example.com`
 - `VITE_AUTH0_DOMAIN=your-tenant.us.auth0.com`
 - `VITE_AUTH0_CLIENT_ID=...`
 - `VITE_AUTH0_AUDIENCE=https://api.vouch.dev`
+- `VITE_AUTH0_GITHUB_CONNECTION=github`
+- `VITE_AUTH0_LINEAR_CONNECTION=linear`
 
 For the CLI after deploy:
 
@@ -99,6 +106,7 @@ Before demoing to judges:
 - a real delegation exists
 - the CLI points at the deployed API
 - a step-up action can be approved live from the dashboard
+- Linear team discovery works before trying `linear.createIssue`
 
 ## Important Limits
 
@@ -110,4 +118,6 @@ Current tradeoffs:
 - one-instance deployment is the intended mode
 - service connection status is demo-friendly and hackathon-friendly, not a full enterprise OAuth broker
 
-If you want to go beyond hackathon scale, the next milestone is replacing JSON persistence with Postgres or Redis and adding authenticated user sessions around the dashboard.
+If you want to go beyond hackathon scale, the next milestone is replacing JSON persistence with Postgres or Redis and moving the JSON-backed stores and live audit fanout to infrastructure designed for multi-instance deployments.
+
+For the exact Linear + Auth0 custom social connection steps, use [LINEAR_SETUP.md](/Users/anish/Documents/Vouch/LINEAR_SETUP.md).

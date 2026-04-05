@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useAuth0 } from '@auth0/auth0-react';
 import { Shield, GitBranch, AlertTriangle, Clock, ArrowUpRight } from 'lucide-react';
 import AuditLog from '../components/AuditLog';
 import IncidentFeed from '../components/IncidentFeed';
+import DemoScenarioCard from '../components/DemoScenarioCard';
+import RiskSummaryCard from '../components/RiskSummaryCard';
 import StepUpModal from '../components/StepUpModal';
 import AgentInvite from '../components/AgentInvite';
-import { apiUrl } from '../lib/api';
+import { apiFetch } from '../lib/api';
+import { getRuntimeConfig } from '../lib/runtimeConfig';
 
 function getWindowedCount(events, status, durationMs) {
   const cutoff = Date.now() - durationMs;
@@ -15,7 +19,7 @@ function getWindowedCount(events, status, durationMs) {
   }).length;
 }
 
-export default function Dashboard() {
+function DashboardBody({ getAccessTokenSilently = null }) {
   const [stats, setStats] = useState([
     {
       label: 'Actions Processed',
@@ -53,9 +57,9 @@ export default function Dashboard() {
     async function refreshStats() {
       try {
         const [auditRes, sessionsRes, pendingRes] = await Promise.all([
-          fetch(apiUrl('/api/audit?limit=200')),
-          fetch(apiUrl('/api/audit/sessions')),
-          fetch(apiUrl('/api/audit/pending')),
+          apiFetch('/api/audit?limit=200', { getAccessTokenSilently }),
+          apiFetch('/api/audit/sessions', { getAccessTokenSilently }),
+          apiFetch('/api/audit/pending', { getAccessTokenSilently }),
         ]);
 
         const [auditData, sessionsData, pendingData] = await Promise.all([
@@ -174,10 +178,22 @@ export default function Dashboard() {
         </div>
 
         <div className="space-y-6">
+          <DemoScenarioCard />
+          <RiskSummaryCard />
           <IncidentFeed />
           <AgentInvite />
         </div>
       </div>
     </div>
   );
+}
+
+function LiveDashboard() {
+  const { getAccessTokenSilently } = useAuth0();
+  return <DashboardBody getAccessTokenSilently={getAccessTokenSilently} />;
+}
+
+export default function Dashboard() {
+  const authClientId = getRuntimeConfig('VITE_AUTH0_CLIENT_ID');
+  return authClientId ? <LiveDashboard /> : <DashboardBody />;
 }

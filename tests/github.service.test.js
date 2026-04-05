@@ -217,6 +217,53 @@ test('executeGitHubAction lists recent commits for a branch', async () => {
   ]);
 });
 
+test('executeGitHubAction returns an existing PR when the branch already has one open', async () => {
+  const { executeGitHubAction } = loadGitHubService();
+  let listArgs = null;
+
+  const octokit = {
+    git: {},
+    repos: {},
+    pulls: {
+      async create() {
+        throw new Error('Validation Failed: {"resource":"PullRequest","code":"custom","message":"A pull request already exists for demo:feature/test."}');
+      },
+      async list(args) {
+        listArgs = args;
+        return {
+          data: [
+            {
+              number: 42,
+              html_url: 'https://github.com/demo/repo/pull/42',
+              title: 'Ship it',
+            },
+          ],
+        };
+      },
+    },
+  };
+
+  const result = await executeGitHubAction(octokit, 'openPR', {
+    repo: 'demo/repo',
+    title: 'Ship it',
+    head: 'feature/test',
+    base: 'main',
+  });
+
+  assert.deepEqual(listArgs, {
+    owner: 'demo',
+    repo: 'repo',
+    state: 'open',
+    head: 'demo:feature/test',
+    base: 'main',
+    per_page: 10,
+  });
+
+  assert.equal(result.number, 42);
+  assert.equal(result.existing, true);
+  assert.equal(result.html_url, 'https://github.com/demo/repo/pull/42');
+});
+
 test('callGitHub falls back to the Auth0 GitHub identity token when Token Vault is unavailable', async (t) => {
   const calls = [];
 

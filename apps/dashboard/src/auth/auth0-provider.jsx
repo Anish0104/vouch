@@ -46,6 +46,9 @@ export default function Auth0ProviderWrapper({ children }) {
       }}
       onRedirectCallback={handleRedirectCallback}
       cacheLocation="localstorage"
+      // The dashboard uses the My Account audience for interactive user sessions.
+      // Backend user endpoints accept this token so we don't need a second user grant
+      // for the custom API audience just to save policy or read audit data.
       useRefreshTokens
       useRefreshTokensFallback
     >

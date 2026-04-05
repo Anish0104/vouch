@@ -1,11 +1,37 @@
 const express = require('express');
 const router = express.Router();
-const { getFrontendUrl } = require('../config/runtime');
-const { connectionStore } = require('../services/connectionStore');
+const { getFrontendUrl, isDemoMode, loadApiEnv } = require('../config/runtime');
 const { delegationStore } = require('../services/delegationStore');
+const { createDemoScenarioDelegation } = require('../services/demoScenario');
 const { normalizePolicy } = require('../services/policy');
+const { summarizePolicy } = require('../services/policySummary');
+const { verifyUserAccessToken } = require('../middleware/verifyUserAccessToken');
 
-router.post('/', (req, res) => {
+loadApiEnv();
+
+const DEMO_MODE = isDemoMode();
+
+function serializeDelegation(delegation) {
+  if (!delegation) {
+    return null;
+  }
+
+  return {
+    delegationId: delegation.delegationId,
+    agentId: delegation.agentId,
+    services: delegation.services,
+    inviteToken: delegation.inviteToken,
+    expiresAt: delegation.expiresAt,
+    createdAt: delegation.createdAt,
+    policy: delegation.policy,
+    allow: delegation.policy?.allow || [],
+    deny: delegation.policy?.deny || [],
+    stepUpRequired: delegation.policy?.stepUpRequired || [],
+    summary: summarizePolicy(delegation.policy),
+  };
+}
+
+router.post('/', verifyUserAccessToken, (req, res) => {
   const { agentId, policy, services, userId } = req.body;
 
   if (!agentId || !policy) {
@@ -18,11 +44,7 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'policy.allow must be an array' });
   }
 
-  const connectedUserId = ['github', 'linear']
-    .map((service) => connectionStore.getUserId(service))
-    .find(Boolean);
-
-  const resolvedUserId = userId || req.auth?.sub || connectedUserId || 'demo-user';
+  const resolvedUserId = DEMO_MODE ? (userId || req.auth?.sub || 'demo-user') : req.auth?.sub;
 
   const delegation = delegationStore.create({
     agentId,
@@ -32,24 +54,29 @@ router.post('/', (req, res) => {
   });
 
   return res.status(201).json({
-    delegationId: delegation.delegationId,
-    inviteToken: delegation.inviteToken,
-    expiresAt: delegation.expiresAt,
+    ...serializeDelegation(delegation),
     inviteUrl: `${getFrontendUrl()}/invite/${delegation.inviteToken}`,
   });
 });
 
-router.get('/', (req, res) => {
-  const delegations = delegationStore.list().map((d) => ({
-    delegationId: d.delegationId,
-    agentId: d.agentId,
-    services: d.services,
-    expiresAt: d.expiresAt,
-    createdAt: d.createdAt,
-    allow: d.policy.allow,
-    deny: d.policy.deny,
-    stepUpRequired: d.policy.stepUpRequired,
-  }));
+router.post('/demo-scenario', verifyUserAccessToken, (req, res) => {
+  const resolvedUserId = DEMO_MODE ? (req.auth?.sub || 'demo-user') : req.auth?.sub;
+  const { delegation, scenario } = createDemoScenarioDelegation(resolvedUserId);
+
+  return res.status(201).json({
+    ...serializeDelegation(delegation),
+    inviteUrl: `${getFrontendUrl()}/invite/${delegation.inviteToken}`,
+    scenario,
+  });
+});
+
+router.get('/', verifyUserAccessToken, (req, res) => {
+  const delegations = delegationStore
+    .list()
+    .filter((delegation) => (DEMO_MODE ? true : delegation.userId === req.auth?.sub))
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .map((delegation) => serializeDelegation(delegation));
+
   res.json({ delegations });
 });
 
@@ -61,27 +88,16 @@ router.get('/invite/:token', (req, res) => {
   }
 
   return res.json({
-    delegationId: delegation.delegationId,
-    agentId: delegation.agentId,
-    services: delegation.services,
-    expiresAt: delegation.expiresAt,
-    policy: delegation.policy,
+    ...serializeDelegation(delegation),
   });
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', verifyUserAccessToken, (req, res) => {
   const delegation = delegationStore.get(req.params.id);
-  if (!delegation) {
+  if (!delegation || (!DEMO_MODE && delegation.userId !== req.auth?.sub)) {
     return res.status(404).json({ error: 'Delegation not found or expired' });
   }
-  res.json({
-    delegationId: delegation.delegationId,
-    agentId: delegation.agentId,
-    services: delegation.services,
-    expiresAt: delegation.expiresAt,
-    createdAt: delegation.createdAt,
-    policy: delegation.policy,
-  });
+  res.json(serializeDelegation(delegation));
 });
 
 module.exports = router;

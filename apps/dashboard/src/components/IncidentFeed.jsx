@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth0 } from '@auth0/auth0-react';
 import { Bot, Clock, Shield, AlertTriangle, Zap } from 'lucide-react';
-import { apiUrl } from '../lib/api';
+import { apiFetch } from '../lib/api';
+import { getRuntimeConfig } from '../lib/runtimeConfig';
 
 function timeAgo(ts) {
   const diff = Date.now() - new Date(ts).getTime();
@@ -10,17 +12,17 @@ function timeAgo(ts) {
   return `${Math.floor(diff / 3600000)}h ago`;
 }
 
-export default function IncidentFeed() {
+function IncidentFeedBody({ getAccessTokenSilently = null }) {
   const [sessions, setSessions] = useState([]);
 
   useEffect(() => {
-    fetch(apiUrl('/api/audit/sessions'))
+    apiFetch('/api/audit/sessions', { getAccessTokenSilently })
       .then((r) => r.json())
       .then((data) => setSessions(data.sessions || []))
       .catch(() => {});
 
     const interval = setInterval(() => {
-      fetch(apiUrl('/api/audit/sessions'))
+      apiFetch('/api/audit/sessions', { getAccessTokenSilently })
         .then((r) => r.json())
         .then((data) => setSessions(data.sessions || []))
         .catch(() => {});
@@ -102,4 +104,14 @@ export default function IncidentFeed() {
       </div>
     </div>
   );
+}
+
+function LiveIncidentFeed() {
+  const { getAccessTokenSilently } = useAuth0();
+  return <IncidentFeedBody getAccessTokenSilently={getAccessTokenSilently} />;
+}
+
+export default function IncidentFeed() {
+  const authClientId = getRuntimeConfig('VITE_AUTH0_CLIENT_ID');
+  return authClientId ? <LiveIncidentFeed /> : <IncidentFeedBody />;
 }

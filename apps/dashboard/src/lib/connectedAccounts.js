@@ -1,4 +1,4 @@
-import { apiUrl } from './api';
+import { apiFetch } from './api';
 import { getRuntimeConfig } from './runtimeConfig';
 
 const FLOW_PREFIX = 'vouch:connected-account:';
@@ -241,15 +241,14 @@ export async function completeConnectedAccountRequest({ connectCode, state, getA
   };
 }
 
-export async function recordConnectionState({ serviceId, connected, userId, accountId = null }) {
-  const response = await fetch(apiUrl(`/api/auth/record/${serviceId}`), {
+export async function recordConnectionState({ serviceId, connected, accountId = null, getAccessTokenSilently }) {
+  const response = await apiFetch(`/api/auth/record/${serviceId}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    getAccessTokenSilently,
+    body: {
       connected,
-      userId,
       accountId,
-    }),
+    },
   });
 
   const data = await response.json();

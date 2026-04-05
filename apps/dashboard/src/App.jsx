@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Connect from './pages/Connect';
 import Policy from './pages/Policy';
 import Invite from './pages/Invite';
+import AuditSnapshot from './pages/AuditSnapshot';
 import AuthCallback from './pages/AuthCallback';
 import { apiUrl } from './lib/api';
 import { getRuntimeConfig } from './lib/runtimeConfig';
@@ -51,6 +52,7 @@ function Shell({ user }) {
               <Route path="/connect" element={<Connect />} />
               <Route path="/policy" element={<Policy />} />
               <Route path="/invite/:token" element={<Invite />} />
+              <Route path="/audit/share/:snapshotId" element={<AuditSnapshot />} />
               <Route path="/callback" element={<AuthCallback />} />
               <Route path="/approve/:auditId" element={<Dashboard />} />
               <Route path="*" element={<Navigate to="/" replace />} />

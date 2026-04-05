@@ -44,6 +44,14 @@ services:
         sync: false
       - key: AUTH0_MGMT_CLIENT_SECRET
         sync: false
+      - key: AUTH0_TOKEN_VAULT_CLIENT_ID
+        sync: false
+      - key: AUTH0_TOKEN_VAULT_CLIENT_SECRET
+        sync: false
+      - key: AUTH0_TOKEN_VAULT_PRIVATE_KEY
+        sync: false
+      - key: AUTH0_TOKEN_VAULT_KEY_ID
+        sync: false
       - key: VITE_API_URL
         sync: false
       - key: VITE_AUTH0_DOMAIN
@@ -51,4 +59,8 @@ services:
       - key: VITE_AUTH0_CLIENT_ID
         sync: false
       - key: VITE_AUTH0_AUDIENCE
+        sync: false
+      - key: VITE_AUTH0_GITHUB_CONNECTION
+        sync: false
+      - key: VITE_AUTH0_LINEAR_CONNECTION
         sync: false

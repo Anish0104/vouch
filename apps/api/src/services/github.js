@@ -150,6 +150,26 @@ async function pushCode(octokit, owner, repoName, params) {
   };
 }
 
+async function findExistingPullRequest(octokit, owner, repoName, params) {
+  const { data } = await octokit.pulls.list({
+    owner,
+    repo: repoName,
+    state: 'open',
+    head: `${owner}:${params.head}`,
+    base: params.base || 'main',
+    per_page: 10,
+  });
+
+  if (!Array.isArray(data) || data.length === 0) {
+    return null;
+  }
+
+  return {
+    ...data[0],
+    existing: true,
+  };
+}
+
 async function executeGitHubAction(octokit, action, params = {}) {
   const { owner, repoName } = parseRepo(params.repo);
 
@@ -183,14 +203,31 @@ async function executeGitHubAction(octokit, action, params = {}) {
       return data;
     }
     case 'openPR': {
-      const { data } = await octokit.pulls.create({
-        owner, repo: repoName,
-        title: params.title,
-        body: params.body || '',
-        head: params.head,
-        base: params.base || 'main',
-      });
-      return data;
+      try {
+        const { data } = await octokit.pulls.create({
+          owner, repo: repoName,
+          title: params.title,
+          body: params.body || '',
+          head: params.head,
+          base: params.base || 'main',
+        });
+        return {
+          ...data,
+          existing: false,
+        };
+      } catch (error) {
+        const message = String(error?.message || error || '');
+        if (!message.includes('A pull request already exists')) {
+          throw error;
+        }
+
+        const existingPr = await findExistingPullRequest(octokit, owner, repoName, params);
+        if (existingPr) {
+          return existingPr;
+        }
+
+        throw error;
+      }
     }
     case 'listPRs': {
       const { data } = await octokit.pulls.list({ owner, repo: repoName, state: params.state || 'open' });

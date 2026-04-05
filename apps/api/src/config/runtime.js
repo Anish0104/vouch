@@ -176,6 +176,9 @@ function validateRuntime() {
     'AUTH0_CLIENT_ID',
     'AUTH0_MGMT_CLIENT_ID',
     'AUTH0_MGMT_CLIENT_SECRET',
+    'AUTH0_TOKEN_VAULT_CLIENT_ID',
+    'AUTH0_TOKEN_VAULT_CLIENT_SECRET',
+    'AUTH0_TOKEN_VAULT_PRIVATE_KEY',
   ];
 
   for (const name of requiredEnv) {

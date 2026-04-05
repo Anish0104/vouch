@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth0 } from '@auth0/auth0-react';
 import { AlertTriangle, CheckCircle2, Loader2, ExternalLink, Link2Off, LogIn } from 'lucide-react';
-import { apiUrl } from '../lib/api';
+import { apiFetch, apiUrl } from '../lib/api';
 import {
   buildMyAccountAuthorizationParams,
   consumePendingServiceConnect,
@@ -28,9 +28,9 @@ const serviceConfig = {
     icon: '📐',
     description: 'Issues, projects, teams, cycles',
     scopes: ['read', 'write', 'issues:create'],
-    permissionsNote: '',
+    permissionsNote: 'Requires a Linear OAuth app and an Auth0 custom social connection for Connected Accounts.',
     color: 'from-indigo-800 to-violet-900',
-    docUrl: 'https://linear.app/settings/api',
+    docUrl: 'https://linear.app/developers/oauth-2-0-authentication',
   },
 };
 
@@ -244,7 +244,14 @@ function DemoServicePanel() {
 }
 
 function LiveServicePanel() {
-  const { isAuthenticated, isLoading: authLoading, loginWithRedirect, connectAccountWithRedirect, user } = useAuth0();
+  const {
+    isAuthenticated,
+    isLoading: authLoading,
+    loginWithRedirect,
+    connectAccountWithRedirect,
+    getAccessTokenSilently,
+    user,
+  } = useAuth0();
   const [services, setServices] = useState({ github: false, linear: false });
   const [loading, setLoading] = useState({});
   const [errorMessage, setErrorMessage] = useState('');
@@ -253,7 +260,9 @@ function LiveServicePanel() {
 
   async function refreshStatus() {
     try {
-      const response = await fetch(apiUrl('/api/auth/status'));
+      const response = await apiFetch('/api/auth/status', {
+        getAccessTokenSilently: isAuthenticated ? getAccessTokenSilently : null,
+      });
       const data = await response.json();
       if (data.services) {
         const nextServices = { ...data.services };
@@ -298,7 +307,7 @@ function LiveServicePanel() {
         await recordConnectionState({
           serviceId,
           connected: false,
-          userId: user?.sub || null,
+          getAccessTokenSilently,
         });
         await refreshStatus();
         return;

@@ -62,6 +62,7 @@ class DelegationStore {
         'github.createCommit',
         'github.pushCode',
         'linear.createIssue',
+        'linear.listTeams',
         'linear.listIssues',
         'linear.updateIssue',
       ],

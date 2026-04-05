@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth0 } from '@auth0/auth0-react';
 import { ShieldCheck, ShieldX, X, AlertTriangle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { apiUrl } from '../lib/api';
+import { apiFetch } from '../lib/api';
+import { getRuntimeConfig } from '../lib/runtimeConfig';
 
-export default function StepUpModal() {
+function StepUpModalBody({ getAccessTokenSilently = null }) {
   const navigate = useNavigate();
   const { auditId: routeAuditId } = useParams();
   const [pending, setPending] = useState([]);
@@ -18,7 +20,7 @@ export default function StepUpModal() {
   }, [routeAuditId]);
 
   function fetchPending() {
-    fetch(apiUrl('/api/audit/pending'))
+    apiFetch('/api/audit/pending', { getAccessTokenSilently })
       .then((r) => r.json())
       .then((data) => {
         const items = data.pending || [];
@@ -45,7 +47,10 @@ export default function StepUpModal() {
   async function handleApprove(auditId) {
     setProcessing(true);
     try {
-      await fetch(apiUrl(`/api/audit/approve/${auditId}`), { method: 'POST' });
+      await apiFetch(`/api/audit/approve/${auditId}`, {
+        method: 'POST',
+        getAccessTokenSilently,
+      });
       fetchPending();
       closeModal();
     } catch {}
@@ -55,7 +60,10 @@ export default function StepUpModal() {
   async function handleReject(auditId) {
     setProcessing(true);
     try {
-      await fetch(apiUrl(`/api/audit/reject/${auditId}`), { method: 'POST' });
+      await apiFetch(`/api/audit/reject/${auditId}`, {
+        method: 'POST',
+        getAccessTokenSilently,
+      });
       fetchPending();
       closeModal();
     } catch {}
@@ -155,4 +163,14 @@ export default function StepUpModal() {
       </motion.div>
     </AnimatePresence>
   );
+}
+
+function LiveStepUpModal() {
+  const { getAccessTokenSilently } = useAuth0();
+  return <StepUpModalBody getAccessTokenSilently={getAccessTokenSilently} />;
+}
+
+export default function StepUpModal() {
+  const authClientId = getRuntimeConfig('VITE_AUTH0_CLIENT_ID');
+  return authClientId ? <LiveStepUpModal /> : <StepUpModalBody />;
 }

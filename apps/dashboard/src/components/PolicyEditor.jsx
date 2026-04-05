@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth0 } from '@auth0/auth0-react';
 import { CheckCircle, XOctagon, AlertTriangle, Save, RotateCcw } from 'lucide-react';
-import { apiUrl } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import { saveLatestInvite } from '../lib/invite';
 import { getRuntimeConfig } from '../lib/runtimeConfig';
 
@@ -18,6 +18,7 @@ const defaultPolicy = {
     'github.createCommit',
     'github.pushCode',
     'linear.createIssue',
+    'linear.listTeams',
     'linear.listIssues',
   ],
   deny: [
@@ -45,12 +46,25 @@ const allActions = [
   { id: 'github.accessSecrets', label: 'Access Secrets', service: 'github' },
   { id: 'github.deleteRepo', label: 'Delete Repo', service: 'github' },
   { id: 'linear.createIssue', label: 'Create Issue', service: 'linear' },
+  { id: 'linear.listTeams', label: 'List Teams', service: 'linear' },
   { id: 'linear.listIssues', label: 'List Issues', service: 'linear' },
   { id: 'linear.updateIssue', label: 'Update Issue', service: 'linear' },
   { id: 'linear.deleteProject', label: 'Delete Project', service: 'linear' },
 ];
 
-function PolicyEditorBody({ onSave, currentUserId = null, liveMode = false }) {
+function deriveServicesFromPolicy(policy) {
+  return [...new Set(
+    [
+      ...(Array.isArray(policy.allow) ? policy.allow : []),
+      ...(Array.isArray(policy.deny) ? policy.deny : []),
+      ...(Array.isArray(policy.stepUpRequired) ? policy.stepUpRequired : []),
+    ]
+      .map((action) => String(action || '').split('.')[0])
+      .filter(Boolean),
+  )];
+}
+
+function PolicyEditorBody({ onSave, currentUserId = null, getAccessTokenSilently = null, liveMode = false }) {
   const [policy, setPolicy] = useState(defaultPolicy);
   const [view, setView] = useState('visual'); // 'visual' | 'yaml'
   const [saveState, setSaveState] = useState('idle');
@@ -113,10 +127,10 @@ function PolicyEditorBody({ onSave, currentUserId = null, liveMode = false }) {
     setSaveError('');
 
     try {
-      const response = await fetch(apiUrl('/api/delegate'), {
+      const response = await apiFetch('/api/delegate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        getAccessTokenSilently,
+        body: {
           agentId: policy.agent,
           policy: {
             agent: policy.agent,
@@ -125,9 +139,9 @@ function PolicyEditorBody({ onSave, currentUserId = null, liveMode = false }) {
             stepUpRequired: policy.stepUpRequired,
             expiresIn: policy.expires,
           },
-          services: ['github', 'linear'],
+          services: deriveServicesFromPolicy(policy),
           userId: currentUserId || undefined,
-        }),
+        },
       });
 
       const data = await response.json();
@@ -298,12 +312,13 @@ function PolicyEditorBody({ onSave, currentUserId = null, liveMode = false }) {
 }
 
 function LivePolicyEditor(props) {
-  const { user } = useAuth0();
+  const { user, getAccessTokenSilently } = useAuth0();
 
   return (
     <PolicyEditorBody
       {...props}
       liveMode
+      getAccessTokenSilently={getAccessTokenSilently}
       currentUserId={user?.sub || null}
     />
   );

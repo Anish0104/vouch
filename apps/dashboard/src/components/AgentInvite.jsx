@@ -1,17 +1,38 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth0 } from '@auth0/auth0-react';
 import { Copy, Check, Send, Bot, Link2, Shield } from 'lucide-react';
-import { apiUrl } from '../lib/api';
-import { loadLatestInvite, saveLatestInvite } from '../lib/invite';
+import { apiFetch } from '../lib/api';
+import { LATEST_INVITE_EVENT, loadLatestInvite, saveLatestInvite } from '../lib/invite';
 import { getRuntimeConfig } from '../lib/runtimeConfig';
 
-function AgentInviteBody({ delegationId, inviteToken, initialInvite = null, currentUserId = null, liveMode = false }) {
+function AgentInviteBody({
+  delegationId,
+  inviteToken,
+  initialInvite = null,
+  currentUserId = null,
+  getAccessTokenSilently = null,
+  liveMode = false,
+}) {
   const [copied, setCopied] = useState(null);
   const [creating, setCreating] = useState(false);
   const [invite, setInvite] = useState(
     initialInvite || (delegationId ? { delegationId, inviteToken } : loadLatestInvite())
   );
+
+  useEffect(() => {
+    function syncInvite(event) {
+      const nextInvite = event?.detail || loadLatestInvite();
+      if (nextInvite) {
+        setInvite(nextInvite);
+      }
+    }
+
+    window.addEventListener(LATEST_INVITE_EVENT, syncInvite);
+    return () => {
+      window.removeEventListener(LATEST_INVITE_EVENT, syncInvite);
+    };
+  }, []);
 
   async function createInvite() {
     if (liveMode && !currentUserId) {
@@ -20,10 +41,10 @@ function AgentInviteBody({ delegationId, inviteToken, initialInvite = null, curr
 
     setCreating(true);
     try {
-      const res = await fetch(apiUrl('/api/delegate'), {
+      const res = await apiFetch('/api/delegate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        getAccessTokenSilently,
+        body: {
           agentId: 'cursor-agent',
           policy: {
             allow: ['github.createBranch', 'github.readCode', 'github.listCommits', 'github.openPR', 'github.createCommit', 'github.pushCode'],
@@ -33,16 +54,11 @@ function AgentInviteBody({ delegationId, inviteToken, initialInvite = null, curr
           },
           services: ['github'],
           userId: currentUserId || undefined,
-        }),
+        },
       });
       const data = await res.json();
       saveLatestInvite(data);
-      setInvite({
-        delegationId: data.delegationId,
-        inviteToken: data.inviteToken,
-        inviteUrl: data.inviteUrl,
-        expiresAt: data.expiresAt,
-      });
+      setInvite(data);
     } catch {}
     setCreating(false);
   }
@@ -170,12 +186,13 @@ function AgentInviteBody({ delegationId, inviteToken, initialInvite = null, curr
 }
 
 function LiveAgentInvite(props) {
-  const { user } = useAuth0();
+  const { user, getAccessTokenSilently } = useAuth0();
 
   return (
     <AgentInviteBody
       {...props}
       liveMode
+      getAccessTokenSilently={getAccessTokenSilently}
       currentUserId={user?.sub || null}
     />
   );

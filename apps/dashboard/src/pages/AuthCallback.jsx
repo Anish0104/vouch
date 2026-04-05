@@ -68,7 +68,7 @@ function BasicAuthCallback() {
 
 function LiveAuthCallback() {
   const [searchParams] = useSearchParams();
-  const { isAuthenticated, isLoading, user } = useAuth0();
+  const { isAuthenticated, isLoading, getAccessTokenSilently, user } = useAuth0();
   const [state, setState] = useState({
     loading: true,
     error: false,
@@ -134,8 +134,8 @@ function LiveAuthCallback() {
         await recordConnectionState({
           serviceId: resolvedServiceId,
           connected: true,
-          userId: user.sub,
           accountId: connectedAccount?.accountId || null,
+          getAccessTokenSilently,
         });
 
         if (!cancelled) {
