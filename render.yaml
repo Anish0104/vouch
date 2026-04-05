@@ -2,16 +2,12 @@ services:
   - type: web
     name: vouch
     runtime: docker
-    plan: starter
+    plan: free
     region: ohio
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /readyz
     autoDeployTrigger: checksPass
-    disk:
-      name: vouch-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
