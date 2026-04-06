@@ -1,81 +1,114 @@
 # Vouch
 
-**Tagline:** "Cursor is in your codebase. Do you know what it can do?"
+Vouch is a trust layer for AI agent authorization. It lets an agent act on GitHub and Linear through scoped delegations, human approval, and Auth0 Token Vault so the agent never receives raw user credentials.
 
-Vouch is a trust layer for AI agent authorization. It allows coding agents to perform scoped actions on GitHub/Linear without ever receiving a raw user credential.
+Current live deployment: `https://vouch-q017.onrender.com`
 
-For the Auth0 "Authorized to Act" hackathon (April 2026), Vouch demonstrates:
+## Why Vouch
 
-- Policy-as-code via `.vouch.yml`
-- Agent auth via Auth0 M2M
-- Human step-up approval for sensitive actions
-- Real-time audit logs over SSE
-- Token Vault-backed service execution where the agent never gets OAuth tokens
+AI coding agents are useful, but "just give the agent your token" is not a security model.
 
-## Core Idea
+Vouch adds a control plane between the agent and your tools:
 
-The security boundary is `Token Vault + policy enforcement`:
+- policy-as-code in `.vouch.yml`
+- Auth0-backed machine identity for the agent
+- per-action allow, deny, and step-up rules
+- live audit logs and approval workflows
+- GitHub and Linear execution through Token Vault-backed credentials
 
-1. Agent requests an action through `POST /api/agent/action`
-2. API verifies M2M identity and delegation policy
-3. Denied actions are blocked and logged
-4. Step-up actions wait for human approval
-5. Allowed actions execute using Token Vault-backed credentials
-6. Results return to the agent and are streamed to dashboard audit logs
+## What It Demonstrates
 
-## Monorepo Structure
+For the Auth0 "Authorized to Act" hackathon, Vouch shows:
+
+- an agent requesting actions through a policy gateway
+- a human approving sensitive operations in real time
+- secure connected-account execution without leaking OAuth tokens to the agent
+- a single deployed dashboard/API service that is easy to demo live
+
+## How It Works
+
+1. An agent sends an action request to `POST /api/agent/action`.
+2. The API authenticates the agent with Auth0 M2M.
+3. Vouch evaluates the request against the active delegation policy.
+4. Allowed actions execute immediately through connected accounts and Token Vault.
+5. Step-up actions wait for a human approval in the dashboard.
+6. Every action is streamed into the audit log.
+
+## Architecture
+
+```text
+Agent CLI / SDK
+      |
+      v
+  Vouch API  -----> Policy evaluation (.vouch.yml + delegation rules)
+      |
+      +-----> Auth0 M2M / SPA auth / Connected Accounts / Token Vault
+      |
+      +-----> GitHub + Linear actions
+      |
+      +-----> Dashboard audit stream + approval UI
+```
+
+## Monorepo Layout
 
 ```text
 vouch/
 ├── apps/
-│   ├── api/         # Express Vouch API
-│   └── dashboard/   # React dashboard
+│   ├── api/              # Express API and runtime config
+│   └── dashboard/        # React dashboard
 ├── packages/
-│   └── vouch-sdk/   # Agent SDK + CLI
-├── .vouch.yml       # Example policy
-├── .env.example     # Combined env example
+│   └── vouch-sdk/        # Agent SDK + CLI
+├── .vouch.yml            # Policy-as-code example
+├── render.yaml           # Render Blueprint
+├── DEPLOYMENT.md         # Full deployment checklist
+├── LINEAR_SETUP.md       # Auth0 + Linear setup notes
 └── README.md
 ```
 
 ## Tech Stack
 
-- Frontend: React 18, Vite 5, Tailwind CSS 3, Framer Motion 11
-- Backend: Node.js, Express 4, Auth0 SDK, Octokit, js-yaml
-- Agent SDK/CLI: Node.js, Groq SDK, Axios, js-yaml
-- Auth: Auth0 SPA + M2M + Token Vault + step-up workflows
+- Frontend: React 18, Vite 5, Tailwind CSS, Framer Motion
+- Backend: Node.js, Express 4
+- Auth: Auth0 SPA, Auth0 M2M, Auth0 Token Vault, Connected Accounts
+- Integrations: GitHub, Linear
+- Agent runtime: Node.js CLI, Groq SDK, Axios
 
-## Quick Start
+## Local Development
 
-### 1) Install dependencies
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 1.5) Run the verification suite
+### 2. Configure environment
 
-```bash
-npm test
-```
+Copy `.env.example` into the env files you need for local work:
 
-### 2) Configure environment
+- `apps/api/.env` for API/runtime settings
+- `apps/dashboard/.env` for public dashboard settings
+- `packages/vouch-sdk/.env` for CLI/SDK settings
 
-Copy values from `.env.example` into your local environment as needed for:
+Core groups you will need:
 
-- API (`AUTH0_*`, `PORT`, `FRONTEND_URL`, `API_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `DEMO_MODE`, `SERVE_DASHBOARD`, `VOUCH_DATA_DIR`)
-- API (`AUTH0_*`, `HOST`, `PORT`, `FRONTEND_URL`, `API_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `DEMO_MODE`, `SERVE_DASHBOARD`, `VOUCH_DATA_DIR`)
-- Dashboard (`VITE_*`)
-- Dashboard (`VITE_*`, optional `VITE_AUTH0_GITHUB_CONNECTION`, `VITE_AUTH0_LINEAR_CONNECTION`)
-- CLI/SDK (`VOUCH_*`, `GROQ_API_KEY`)
+- API: `AUTH0_*`, `HOST`, `PORT`, `FRONTEND_URL`, `API_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `TRUST_PROXY`, `SERVE_DASHBOARD`, `VOUCH_DATA_DIR`, `DEMO_MODE`
+- Dashboard: `VITE_AUTH0_*`, `VITE_API_URL`
+- SDK/CLI: `VOUCH_API_URL`, `VOUCH_DELEGATION_ID`, `VOUCH_M2M_CLIENT_ID`, `VOUCH_M2M_CLIENT_SECRET`, `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `GROQ_API_KEY`
 
-For live Token Vault execution, also configure:
+For live Token Vault execution you also need:
 
 - `AUTH0_TOKEN_VAULT_CLIENT_ID`
 - `AUTH0_TOKEN_VAULT_CLIENT_SECRET`
 - `AUTH0_TOKEN_VAULT_PRIVATE_KEY`
 - `AUTH0_TOKEN_VAULT_KEY_ID` (optional)
 
-### 3) Run API + dashboard
+### 3. Run tests
+
+```bash
+npm test
+```
+
+### 4. Start the app locally
 
 ```bash
 npm run dev
@@ -83,128 +116,127 @@ npm run dev
 
 This starts:
 
-- API on `http://localhost:3001`
-- Dashboard on `http://localhost:5173`
+- API at `http://localhost:3001`
+- Dashboard at `http://localhost:5173`
 
-### 4) Run CLI agent
-
-```bash
-npm run run-agent --workspace=packages/vouch-sdk -- run "create a branch called feature/test"
-```
-
-### 5) Check runtime readiness
+### 5. Check readiness
 
 ```bash
+curl http://localhost:3001/health
 curl http://localhost:3001/readyz
 ```
 
-`/health` reports liveness. `/readyz` reports missing production config such as Auth0 or public URL settings.
+`/health` is liveness. `/readyz` checks whether the runtime config is complete enough for live mode.
 
-## Environment Modes
+## Demo Modes
 
-- `DEMO_MODE=true`:
-  - Skips live Auth0 verification and live Token Vault calls
-  - Uses demo identities/tokens and mock service responses
-  - Enables fast local demos
-- `DEMO_MODE=false`:
-  - Expects real Auth0 + OAuth + Token Vault configuration
+- `DEMO_MODE=true`
+  - uses mock identities and mock tool execution
+  - good for fast local demos without live Auth0 flows
+- `DEMO_MODE=false`
+  - requires real Auth0 and connected-account configuration
+  - used for deployed/live demos
 
-## Production Deployment
+## Running the Agent CLI
 
-Vouch can now ship as a single service:
-
-1. Build the dashboard
+From the repo root:
 
 ```bash
-npm run build
+npm run run-agent --workspace=packages/vouch-sdk -- run "create a branch called feature/test-vouch"
 ```
 
-2. Start the API in live mode
+The SDK reads:
+
+- `VOUCH_API_URL` for the target Vouch API
+- `VOUCH_DELEGATION_ID` for the active delegation
+- `VOUCH_M2M_CLIENT_ID` and `VOUCH_M2M_CLIENT_SECRET` to mint the agent token
+
+If you run the CLI from this repo checkout, it can auto-detect the default GitHub repo from `git remote origin`.
+
+## Live Demo Flow
+
+### Dashboard
+
+1. Open `https://vouch-q017.onrender.com`
+2. Sign in with Auth0
+3. Connect GitHub and Linear on the `Connect` tab
+4. Click `Run Demo Scenario` on the dashboard
+5. Copy the generated delegation id and suggested task
+
+### CLI
+
+Point the SDK at the deployed service and use the new delegation:
 
 ```bash
-npm start
+export VOUCH_API_URL=https://vouch-q017.onrender.com
+export VOUCH_DELEGATION_ID=<real-delegation-id>
+npm run run-agent --workspace=packages/vouch-sdk -- run "create a branch called feature/final-demo"
 ```
 
-3. Or build and run the containerized deployment
+Expected result:
+
+- the agent creates a branch through Vouch
+- the audit log updates in real time
+- the branch appears in GitHub
+
+To test a step-up flow:
 
 ```bash
-docker compose up --build
+npm run run-agent --workspace=packages/vouch-sdk -- run "open a pull request from feature/final-demo to main titled Final demo PR"
 ```
 
-Production-specific notes:
+Then approve the pending action from the dashboard.
 
-- Set `API_BASE_URL` to the public HTTPS URL of the API so OAuth callbacks resolve correctly behind proxies/load balancers.
-- Set `FRONTEND_URL` to the public dashboard URL. For the single-container deployment, this is usually the same value as `API_BASE_URL`.
-- Set `CORS_ALLOWED_ORIGINS` to the dashboard origin if the dashboard is hosted separately.
-- Set `SERVE_DASHBOARD=true` to serve the built React app from the API process.
-- The dashboard reads public Auth0/API settings from `/runtime-config.js`, so the same built frontend can be configured at runtime inside the container.
-- `/readyz` returns `503` until the required live Auth0 configuration is present.
-- Live service connection now uses Auth0 Connected Accounts via the My Account API. Your Auth0 SPA must be allowed to request Connected Accounts scopes, and your connection names must match `VITE_AUTH0_GITHUB_CONNECTION` / `VITE_AUTH0_LINEAR_CONNECTION`.
-- Live Token Vault execution now uses a privileged worker token exchange, so the API also needs `AUTH0_TOKEN_VAULT_CLIENT_ID`, `AUTH0_TOKEN_VAULT_CLIENT_SECRET`, and `AUTH0_TOKEN_VAULT_PRIVATE_KEY`.
-- Live dashboard mutation and approval routes now require an end-user Auth0 access token, so policy saves, invite generation, audit reads, and step-up approvals are scoped to the signed-in user.
-- Linear issue creation can now discover workspace teams through `linear.listTeams`, and `linear.createIssue` accepts `teamId`, `teamKey`, or `teamName` so the agent does not need a raw team UUID up front.
-- Render Blueprint deployment is included in [render.yaml](/Users/anish/Documents/Vouch/render.yaml).
-- CI is included in [.github/workflows/ci.yml](/Users/anish/Documents/Vouch/.github/workflows/ci.yml).
-- A post-deploy smoke check is included via `npm run deploy:check -- https://your-app.example.com`.
-- The full deployment checklist is in [DEPLOYMENT.md](/Users/anish/Documents/Vouch/DEPLOYMENT.md).
-- The Linear/Auth0 setup walkthrough is in [LINEAR_SETUP.md](/Users/anish/Documents/Vouch/LINEAR_SETUP.md).
+## Deployment
 
-## API Surface
+Vouch is designed to deploy as a single web service that serves:
 
-### Delegation
+- the Express API
+- the built React dashboard
+- runtime dashboard config at `/runtime-config.js`
 
-- `POST /api/delegate`
-  - Create a delegation with allow/deny/step-up policy
-- `GET /api/delegate`
-  - List active delegations
-- `GET /api/delegate/:id`
-  - Read one delegation
-- `GET /api/delegate/invite/:token`
-  - Resolve invite token to delegation metadata
+Recommended path:
 
-### Agent Actions
+- use the included [render.yaml](render.yaml) Blueprint on Render
+- fill in the `sync: false` environment variables in Render
+- configure Auth0 callback, web origin, logout, and CORS URLs
+- deploy and wait for `/readyz` to return `200`
 
-- `POST /api/agent/action`
-  - Main action execution endpoint
-  - Requires `Authorization: Bearer <m2m token>`
-  - Requires `X-Vouch-Delegation: <delegation id>`
-- `GET /api/agent/pending`
-  - List pending step-up actions
+Smoke-check a deployment with:
 
-### Audit + Approval
+```bash
+npm run deploy:check -- https://vouch-q017.onrender.com
+```
 
-- `GET /api/audit`
-  - Query audit events (`limit`, `status`, `agent`, `auditId`, `delegationId`)
-- `GET /api/audit/stream`
-  - SSE stream of live audit actions
-- `GET /api/audit/sessions`
-  - Aggregated active sessions
-- `GET /api/audit/pending`
-  - Pending approval queue
-- `POST /api/audit/approve/:auditId`
-  - Approve pending action
-- `POST /api/audit/reject/:auditId`
-  - Reject pending action
+For the full checklist, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
-Compatibility aliases also exist:
+For Auth0 + Linear setup details, see [LINEAR_SETUP.md](LINEAR_SETUP.md).
 
-- `POST /api/approve/:auditId`
-- `POST /api/reject/:auditId`
+## Production Runtime Notes
 
-## Policy-as-Code (`.vouch.yml`)
+- `API_BASE_URL` should be the public HTTPS URL of the deployed app
+- `FRONTEND_URL` should be the public dashboard URL
+- `CORS_ALLOWED_ORIGINS` should include the dashboard origin
+- `SERVE_DASHBOARD=true` serves the built frontend from the API process
+- `/readyz` returns `503` until required live Auth0 settings are present
+- live dashboard writes and approvals require a signed-in end-user access token
 
-Example:
+## Example Policy
 
 ```yaml
 agent: cursor
 expires: 48h
+
 allow:
   - github.createBranch
   - github.readCode
+  - github.listCommits
   - github.openPR
+
 deny:
   - github.mergeToMain
   - github.accessSecrets
+
 step_up_required:
   - github.openPR
   - github.pushCode
@@ -212,23 +244,46 @@ step_up_required:
 
 Enforcement order:
 
-1. Deny list
-2. Allow list
-3. Step-up requirement
+1. deny list
+2. allow list
+3. step-up requirement
 
-## Demo Flow (3-minute script)
+## API Overview
 
-1. Connect GitHub/Linear in dashboard
-2. Save delegation policy from Policy page
-3. Generate invite from Dashboard
-4. Run CLI task through Vouch SDK
-5. Watch live audit stream events
-6. Approve step-up action in modal
-7. Show blocked denied action
+### Delegation
 
-## Notes
+- `POST /api/delegate`
+- `GET /api/delegate`
+- `GET /api/delegate/:id`
+- `GET /api/delegate/invite/:token`
 
-- Delegations, approvals, audit events, and connection status now persist to JSON files in `VOUCH_DATA_DIR` (default: `.vouch-data`).
-- The repo is deployment-ready for a single-instance environment. For production scale or HA, replace the JSON-backed stores with Redis/Postgres.
-- `github.createCommit` now creates a real Git commit via the GitHub Git Data APIs, and `github.pushCode` advances the branch ref in a separate step-up action.
-- The API can serve the built dashboard directly, and includes `/health` and `/readyz` endpoints for platform health checks.
+### Agent Actions
+
+- `POST /api/agent/action`
+- `GET /api/agent/pending`
+
+### Audit and Approval
+
+- `GET /api/audit`
+- `GET /api/audit/stream`
+- `GET /api/audit/sessions`
+- `GET /api/audit/pending`
+- `POST /api/audit/approve/:auditId`
+- `POST /api/audit/reject/:auditId`
+
+Compatibility aliases also exist:
+
+- `POST /api/approve/:auditId`
+- `POST /api/reject/:auditId`
+
+## Current Limits
+
+This repo is intentionally optimized for a strong single-instance demo deployment, not horizontal scale.
+
+Current tradeoffs:
+
+- state is persisted to JSON files, not Postgres or Redis
+- one-instance deployment is the intended mode
+- audit fanout and persistence are demo-grade rather than HA production-grade
+
+The next major milestone beyond the hackathon path would be replacing JSON-backed stores with infrastructure designed for multi-instance deployments.
